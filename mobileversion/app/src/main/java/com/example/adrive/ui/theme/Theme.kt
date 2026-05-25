@@ -6,29 +6,35 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 private val LightColorScheme = lightColorScheme(
-    primary = AdriveBlue,
+    primary = Indigo600,
     onPrimary = Color.White,
-    primaryContainer = AdriveBlueLight,
-    onPrimaryContainer = Color.White,
-    secondary = AdriveSubtext,
-    background = AdriveSurface,
-    surface = Color.White,
-    onBackground = AdriveOnSurface,
-    onSurface = AdriveOnSurface,
-    error = AdriveError,
+    primaryContainer = Color(0xFFEEF2FF),
+    onPrimaryContainer = Indigo600,
+    secondary = Violet500,
+    onSecondary = Color.White,
+    tertiary = Pink400,
+    background = SurfaceLight,
+    surface = SurfaceCard,
+    surfaceVariant = SurfaceMuted,
+    onBackground = OnSurfaceDark,
+    onSurface = OnSurfaceDark,
+    onSurfaceVariant = Subtext,
+    error = ErrorRed,
 )
 
 private val DarkColorScheme = darkColorScheme(
-    primary = AdriveBlueLight,
+    primary = Violet400,
     onPrimary = Color.Black,
-    primaryContainer = AdriveBlueDark,
-    onPrimaryContainer = Color.White,
-    secondary = Color(0xFFBBBBBB),
-    background = AdriveSurfaceDark,
-    surface = Color(0xFF2A2A3E),
+    primaryContainer = Color(0xFF312E81),
+    onPrimaryContainer = Color(0xFFEEF2FF),
+    secondary = Cyan400,
+    background = SurfaceDarkBg,
+    surface = SurfaceDarkCard,
+    surfaceVariant = Color(0xFF2A2D45),
     onBackground = Color.White,
     onSurface = Color.White,
-    error = Color(0xFFEF9A9A),
+    onSurfaceVariant = Color(0xFFB8BBCC),
+    error = Color(0xFFFCA5A5),
 )
 
 @Composable
@@ -37,11 +43,9 @@ fun AdriveTheme(
     content: @Composable () -> Unit
 ) {
     val colors = if (darkTheme) DarkColorScheme else LightColorScheme
-
     MaterialTheme(
         colorScheme = colors,
         typography = AdriveTypography,
         content = content
     )
 }
-

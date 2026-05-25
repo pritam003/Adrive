@@ -1,7 +1,10 @@
 package com.example.adrive.ui.drive
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -13,10 +16,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.adrive.data.model.QuotaInfo
-import com.example.adrive.ui.theme.AdriveBlue
-
-// ── App drawer ────────────────────────────────────────────────────────────────
+import com.example.adrive.ui.theme.BrandGradient
+import com.example.adrive.ui.theme.Indigo600
+import com.example.adrive.ui.theme.Subtext
 
 @Composable
 fun AppDrawer(
@@ -25,36 +29,54 @@ fun AppDrawer(
     onNavigate: (NavView) -> Unit,
     onSignOut: () -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxHeight().padding(vertical = 16.dp)) {
-        // Header
-        Row(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
+    Column(modifier = Modifier.fillMaxSize()) {
+        // ─── Hero header with gradient ───────────────────────────────────
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(BrandGradient)
+                .padding(start = 20.dp, end = 20.dp, top = 32.dp, bottom = 20.dp)
         ) {
-            Box(
-                modifier = Modifier.size(40.dp).clip(CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(color = AdriveBlue, shape = CircleShape) {
-                    Icon(
-                        Icons.Default.HardDrive,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.padding(8.dp)
-                    )
-                }
-            }
-            Spacer(Modifier.width(12.dp))
             Column {
-                Text("Adrive", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text("Personal cloud storage", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.25f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.CloudQueue,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text(
+                            "Adrive",
+                            color = Color.White,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            "Your personal cloud",
+                            color = Color.White.copy(alpha = 0.85f),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+                Spacer(Modifier.height(18.dp))
+                // Quota card
+                QuotaCard(quota = quota)
             }
         }
 
-        HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
 
-        // Navigation items
+        // ─── Navigation items ────────────────────────────────────────────
         DrawerItem(
             icon = Icons.Default.CloudQueue,
             label = "My Drive",
@@ -65,60 +87,136 @@ fun AppDrawer(
             icon = Icons.Default.Delete,
             label = "Trash",
             selected = currentView == NavView.TRASH,
+            badge = quota.trashCount.takeIf { it > 0 }?.toString(),
             onClick = { onNavigate(NavView.TRASH) }
         )
 
         Spacer(Modifier.weight(1f))
-        HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+
+        HorizontalDivider(Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+
+        // ─── Sign out ────────────────────────────────────────────────────
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onSignOut)
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Logout,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error
+            )
+            Spacer(Modifier.width(16.dp))
+            Text(
+                "Sign out",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.error,
+                fontWeight = FontWeight.Medium
+            )
+        }
+
         Spacer(Modifier.height(8.dp))
-
-        // Quota display
-        QuotaDisplay(quota = quota)
-
-        Spacer(Modifier.height(8.dp))
-
-        DrawerItem(
-            icon = Icons.Default.Logout,
-            label = "Sign out",
-            selected = false,
-            onClick = onSignOut
+        Text(
+            "Made with ❤️ • v1.0",
+            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            style = MaterialTheme.typography.labelSmall,
+            color = Subtext
         )
     }
 }
 
 @Composable
-private fun DrawerItem(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
-    NavigationDrawerItem(
-        icon = { Icon(icon, contentDescription = label) },
-        label = { Text(label) },
-        selected = selected,
-        onClick = onClick,
-        modifier = Modifier.padding(horizontal = 12.dp)
-    )
+private fun QuotaCard(quota: QuotaInfo) {
+    val activeBytes = quota.totalBytes
+    val sizeText = formatBytes(activeBytes)
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = Color.White.copy(alpha = 0.22f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.3f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Storage, null, tint = Color.White, modifier = Modifier.size(22.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Storage used",
+                    color = Color.White.copy(alpha = 0.85f),
+                    style = MaterialTheme.typography.labelSmall
+                )
+                Text(
+                    sizeText,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+                Text(
+                    "${quota.fileCount} file${if (quota.fileCount == 1) "" else "s"}",
+                    color = Color.White.copy(alpha = 0.8f),
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+    }
 }
 
 @Composable
-private fun QuotaDisplay(quota: QuotaInfo) {
-    Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text("Storage", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(formatBytes(quota.totalBytes), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
-        }
-        Spacer(Modifier.height(2.dp))
+private fun DrawerItem(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    badge: String? = null,
+    onClick: () -> Unit
+) {
+    val bg = if (selected) Indigo600.copy(alpha = 0.12f) else Color.Transparent
+    val fg = if (selected) Indigo600 else MaterialTheme.colorScheme.onSurface
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = fg)
+        Spacer(Modifier.width(16.dp))
         Text(
-            "${quota.fileCount} files",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = fg,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            modifier = Modifier.weight(1f)
         )
-        if (quota.trashCount > 0) {
-            Text(
-                "Trash: ${quota.trashCount} files (${formatBytes(quota.trashBytes)})",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        if (badge != null) {
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = MaterialTheme.colorScheme.error
+            ) {
+                Text(
+                    badge,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
