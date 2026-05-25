@@ -1,19 +1,33 @@
-import { Plus, FolderPlus, FolderUp, HardDrive, Trash, LogOut, Infinity as InfinityIcon } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Plus, FolderPlus, FolderUp, FileUp, HardDrive, Trash, LogOut, Infinity as InfinityIcon, ChevronDown } from 'lucide-react';
 import type { QuotaInfo, MeResponse } from '../types';
 import { formatBytes } from '../utils';
 import { logout } from '../api';
 
 interface Props {
-  onNew: () => void;
-  onNewFolder: () => void;
+  onUploadFiles: () => void;
   onUploadFolder: () => void;
+  onNewFolder: () => void;
   quota: QuotaInfo;
   view: 'drive' | 'trash';
   onChangeView: (v: 'drive' | 'trash') => void;
   me: MeResponse | null;
 }
 
-export function Sidebar({ onNew, onNewFolder, onUploadFolder, quota, view, onChangeView, me }: Props) {
+export function Sidebar({ onUploadFiles, onUploadFolder, onNewFolder, quota, view, onChangeView, me }: Props) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener('click', onDoc);
+    return () => window.removeEventListener('click', onDoc);
+  }, [open]);
+
+  const pick = (fn: () => void) => () => { setOpen(false); fn(); };
 
   return (
     <aside className="sidebar">
@@ -22,19 +36,34 @@ export function Sidebar({ onNew, onNewFolder, onUploadFolder, quota, view, onCha
         <span>Adrive</span>
       </div>
 
-      <div className="new-menu">
-        <button className="new-btn" onClick={onNew}>
+      <div className="new-menu" ref={wrapRef}>
+        <button
+          className="new-btn"
+          onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+          aria-haspopup="menu"
+          aria-expanded={open}
+        >
           <Plus size={20} />
           <span>New upload</span>
+          <ChevronDown size={16} className={'new-btn-caret' + (open ? ' open' : '')} />
         </button>
-        <button className="new-folder-btn" onClick={onUploadFolder}>
-          <FolderUp size={18} />
-          <span>Upload folder</span>
-        </button>
-        <button className="new-folder-btn" onClick={onNewFolder}>
-          <FolderPlus size={18} />
-          <span>New folder</span>
-        </button>
+        {open && (
+          <div className="new-popover" role="menu">
+            <button className="new-popover-item" onClick={pick(onUploadFiles)} role="menuitem">
+              <FileUp size={18} />
+              <span>Upload files</span>
+            </button>
+            <button className="new-popover-item" onClick={pick(onUploadFolder)} role="menuitem">
+              <FolderUp size={18} />
+              <span>Upload folder</span>
+            </button>
+            <div className="new-popover-sep" />
+            <button className="new-popover-item" onClick={pick(onNewFolder)} role="menuitem">
+              <FolderPlus size={18} />
+              <span>New folder</span>
+            </button>
+          </div>
+        )}
       </div>
 
       <nav className="sidebar-nav">

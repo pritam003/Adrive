@@ -295,9 +295,9 @@ function AppInner() {
       onDrop={handleDrop}
     >
       <Sidebar
-        onNew={() => fileInputRef.current?.click()}
-        onNewFolder={() => setNewFolderOpen(true)}
+        onUploadFiles={() => fileInputRef.current?.click()}
         onUploadFolder={() => folderInputRef.current?.click()}
+        onNewFolder={() => setNewFolderOpen(true)}
         quota={quota}
         view={navView}
         onChangeView={(v) => { setNavView(v); setSelected(new Set()); }}
