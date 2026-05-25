@@ -19,12 +19,18 @@ export function formatDate(iso: string): string {
 }
 
 export function getFileCategory(contentType: string, name: string): string {
-  const t = contentType.toLowerCase();
+  const t = (contentType || '').toLowerCase();
   const ext = name.split('.').pop()?.toLowerCase() || '';
+  // Prefer content-type when meaningful
   if (t.startsWith('image/')) return 'image';
   if (t.startsWith('video/')) return 'video';
   if (t.startsWith('audio/')) return 'audio';
-  if (t === 'application/pdf' || ext === 'pdf') return 'pdf';
+  if (t === 'application/pdf') return 'pdf';
+  // Fall back to extension (handles octet-stream uploads)
+  if (['png','jpg','jpeg','gif','webp','bmp','svg','avif','heic','heif'].includes(ext)) return 'image';
+  if (['mp4','webm','mov','m4v','mkv','avi','ogv'].includes(ext)) return 'video';
+  if (['mp3','wav','ogg','m4a','flac','aac','oga'].includes(ext)) return 'audio';
+  if (ext === 'pdf') return 'pdf';
   if (['doc', 'docx', 'odt'].includes(ext)) return 'doc';
   if (['xls', 'xlsx', 'csv', 'ods'].includes(ext)) return 'sheet';
   if (['ppt', 'pptx', 'odp'].includes(ext)) return 'slides';
