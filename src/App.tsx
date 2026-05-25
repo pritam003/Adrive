@@ -8,7 +8,16 @@ import { UploadProgress } from './components/UploadProgress';
 import { PreviewModal } from './components/PreviewModal';
 import { ContextMenu } from './components/ContextMenu';
 import { NewFolderDialog } from './components/NewFolderDialog';
-import { listItems, uploadFile, deleteFile as apiDelete, getReadSas, createFolder as apiCreateFolder, renameFile, getQuota } from './api';
+import { ShareModal } from './components/ShareModal';
+import { TrashView } from './components/TrashView';
+import { SelectionBar } from './components/SelectionBar';
+import { AuthGate } from './AuthGate';
+import {
+  listItems, uploadFile, deleteFile as apiDelete, getReadSasCached,
+  createFolder as apiCreateFolder, renameFile, getQuota,
+} from './api';
+import { generateThumbnail, uploadThumbnail } from './thumbnail';
+import { downloadAsZip } from './zipDownload';
 import type { DriveFile, DriveFolder, ViewMode, QuotaInfo } from './types';
 import './App.css';
 
@@ -22,6 +31,7 @@ interface UploadItem {
 interface PreviewState {
   file: DriveFile;
   url: string;
+  thumbnailUrl?: string;
 }
 
 interface MenuState {
@@ -30,7 +40,7 @@ interface MenuState {
   file?: DriveFile;
 }
 
-export default function App() {
+function AppInner() {
   const [prefix, setPrefix] = useState('');
   const [folders, setFolders] = useState<DriveFolder[]>([]);
   const [files, setFiles] = useState<DriveFile[]>([]);
@@ -43,14 +53,19 @@ export default function App() {
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [quota, setQuota] = useState<QuotaInfo>({ totalBytes: 0, fileCount: 0 });
   const [dragOver, setDragOver] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [shareFor, setShareFor] = useState<DriveFile | null>(null);
+  const [navView, setNavView] = useState<'drive' | 'trash'>('drive');
+  const [me, setMe] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
+    if (navView !== 'drive') return;
     setLoading(true);
     try {
       const data = await listItems(prefix);
       setFolders(data.folders);
-      setFiles(data.files.filter((f) => !f.displayName.endsWith('.keep')));
+      setFiles(data.files);
       const q = await getQuota();
       setQuota(q);
     } catch (e) {
@@ -58,16 +73,24 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [prefix]);
+  }, [prefix, navView]);
 
+  useEffect(() => { refresh(); }, [refresh]);
+
+  // refresh quota when on trash view too
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    getQuota().then(setQuota).catch(() => {});
+  }, [navView]);
 
   useEffect(() => {
     const close = () => setMenu(null);
     window.addEventListener('click', close);
     return () => window.removeEventListener('click', close);
+  }, []);
+
+  // Fetch /api/me once to show user info
+  useEffect(() => {
+    fetch('/api/me').then((r) => r.json()).then(setMe).catch(() => {});
   }, []);
 
   const handleUpload = async (fileList: FileList | File[]) => {
@@ -81,6 +104,10 @@ export default function App() {
           setUploads((u) => u.map((it) => (it.id === id ? { ...it, progress: (loaded / total) * 100 } : it)));
         });
         setUploads((u) => u.map((it) => (it.id === id ? { ...it, progress: 100, status: 'done' } : it)));
+        // Best-effort thumbnail generation in background
+        generateThumbnail(file)
+          .then((blob) => (blob ? uploadThumbnail(blob, blobName) : null))
+          .catch(() => {});
       } catch (e) {
         console.error(e);
         setUploads((u) => u.map((it) => (it.id === id ? { ...it, status: 'error' } : it)));
@@ -91,8 +118,9 @@ export default function App() {
   };
 
   const handleDelete = async (file: DriveFile) => {
-    if (!confirm(`Delete "${file.displayName}"?`)) return;
+    if (!confirm(`Move "${file.displayName}" to trash?`)) return;
     await apiDelete(file.name);
+    setSelected((s) => { const n = new Set(s); n.delete(file.name); return n; });
     refresh();
   };
 
@@ -104,8 +132,10 @@ export default function App() {
     refresh();
   };
 
-  const handleDownload = async (file: DriveFile) => {
-    const url = await getReadSas(file.name);
+  const handleDownload = (file: DriveFile) => {
+    // Use cached/embedded SAS — instant; no API call
+    const url = file.readSasUrl;
+    if (!url) return;
     const a = document.createElement('a');
     a.href = url;
     a.download = file.displayName;
@@ -114,13 +144,20 @@ export default function App() {
     a.remove();
   };
 
-  const handlePreview = async (file: DriveFile) => {
-    const url = await getReadSas(file.name);
-    setPreview({ file, url });
+  const handlePreview = (file: DriveFile) => {
+    // Open INSTANTLY with embedded SAS (skeleton inside modal handles load state)
+    let url = file.readSasUrl;
+    if (url) {
+      setPreview({ file, url, thumbnailUrl: file.thumbnailUrl });
+      return;
+    }
+    // Fallback if list response somehow lacked SAS
+    getReadSasCached(file.name).then((u) => setPreview({ file, url: u, thumbnailUrl: file.thumbnailUrl }));
   };
 
   const handleOpenFolder = (folder: DriveFolder) => {
     setPrefix(folder.name);
+    setSelected(new Set());
   };
 
   const handleNewFolder = async (name: string) => {
@@ -136,6 +173,42 @@ export default function App() {
     if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files);
   };
 
+  const toggleSelect = (name: string) => {
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(name)) n.delete(name); else n.add(name);
+      return n;
+    });
+  };
+
+  const selectedFiles = files.filter((f) => selected.has(f.name));
+
+  const handleSelectedDownloadZip = async () => {
+    if (selectedFiles.length === 0) return;
+    const id = `zip-${Date.now()}`;
+    setUploads((u) => [...u, { id, name: `${selectedFiles.length} files.zip`, progress: 0, status: 'uploading' }]);
+    try {
+      await downloadAsZip(selectedFiles, `adrive-${Date.now()}.zip`, (loaded, total) => {
+        setUploads((u) => u.map((it) => (it.id === id ? { ...it, progress: (loaded / total) * 100 } : it)));
+      });
+      setUploads((u) => u.map((it) => (it.id === id ? { ...it, progress: 100, status: 'done' } : it)));
+    } catch (e) {
+      console.error(e);
+      setUploads((u) => u.map((it) => (it.id === id ? { ...it, status: 'error' } : it)));
+    }
+    setTimeout(() => setUploads((u) => u.filter((it) => it.id !== id)), 3000);
+  };
+
+  const handleSelectedDelete = async () => {
+    if (selectedFiles.length === 0) return;
+    if (!confirm(`Move ${selectedFiles.length} items to trash?`)) return;
+    for (const f of selectedFiles) {
+      try { await apiDelete(f.name); } catch (e) { console.error(e); }
+    }
+    setSelected(new Set());
+    refresh();
+  };
+
   const filteredFolders = folders.filter((f) => f.displayName.toLowerCase().includes(search.toLowerCase()));
   const filteredFiles = files.filter((f) => f.displayName.toLowerCase().includes(search.toLowerCase()));
 
@@ -143,6 +216,7 @@ export default function App() {
     <div
       className="app"
       onDragOver={(e) => {
+        if (navView !== 'drive') return;
         e.preventDefault();
         setDragOver(true);
       }}
@@ -153,42 +227,60 @@ export default function App() {
         onNew={() => fileInputRef.current?.click()}
         onNewFolder={() => setNewFolderOpen(true)}
         quota={quota}
+        view={navView}
+        onChangeView={(v) => { setNavView(v); setSelected(new Set()); }}
+        me={me}
       />
       <div className="main">
-        <Topbar search={search} setSearch={setSearch} view={view} setView={setView} />
-        <Breadcrumbs prefix={prefix} onNavigate={setPrefix} />
-        <div className="content">
-          {loading ? (
-            <div className="empty">Loading…</div>
-          ) : filteredFolders.length === 0 && filteredFiles.length === 0 ? (
-            <div className="empty">
-              <p>This folder is empty</p>
-              <p className="hint">Drag files here or click + New to upload</p>
+        {navView === 'drive' ? (
+          <>
+            <Topbar search={search} setSearch={setSearch} view={view} setView={setView} />
+            <Breadcrumbs prefix={prefix} onNavigate={(p) => { setPrefix(p); setSelected(new Set()); }} />
+            <div className="content">
+              {loading ? (
+                <div className="empty">Loading…</div>
+              ) : filteredFolders.length === 0 && filteredFiles.length === 0 ? (
+                <div className="empty">
+                  <p>This folder is empty</p>
+                  <p className="hint">Drag files here or click + New to upload</p>
+                </div>
+              ) : view === 'grid' ? (
+                <FileGrid
+                  folders={filteredFolders}
+                  files={filteredFiles}
+                  onOpenFolder={handleOpenFolder}
+                  onPreview={handlePreview}
+                  onContext={(e, file) => {
+                    e.preventDefault();
+                    setMenu({ x: e.clientX, y: e.clientY, file });
+                  }}
+                  selected={selected}
+                  onToggleSelect={toggleSelect}
+                />
+              ) : (
+                <FileList
+                  folders={filteredFolders}
+                  files={filteredFiles}
+                  onOpenFolder={handleOpenFolder}
+                  onPreview={handlePreview}
+                  onContext={(e, file) => {
+                    e.preventDefault();
+                    setMenu({ x: e.clientX, y: e.clientY, file });
+                  }}
+                  selected={selected}
+                  onToggleSelect={toggleSelect}
+                />
+              )}
             </div>
-          ) : view === 'grid' ? (
-            <FileGrid
-              folders={filteredFolders}
-              files={filteredFiles}
-              onOpenFolder={handleOpenFolder}
-              onPreview={handlePreview}
-              onContext={(e, file) => {
-                e.preventDefault();
-                setMenu({ x: e.clientX, y: e.clientY, file });
-              }}
-            />
-          ) : (
-            <FileList
-              folders={filteredFolders}
-              files={filteredFiles}
-              onOpenFolder={handleOpenFolder}
-              onPreview={handlePreview}
-              onContext={(e, file) => {
-                e.preventDefault();
-                setMenu({ x: e.clientX, y: e.clientY, file });
-              }}
-            />
-          )}
-        </div>
+          </>
+        ) : (
+          <>
+            <div className="topbar"><h2 style={{ margin: '0 24px' }}>Trash</h2></div>
+            <div className="content">
+              <TrashView onChange={() => getQuota().then(setQuota).catch(() => {})} />
+            </div>
+          </>
+        )}
       </div>
 
       <input
@@ -199,8 +291,25 @@ export default function App() {
         onChange={(e) => e.target.files && handleUpload(e.target.files)}
       />
 
+      {selectedFiles.length > 0 && navView === 'drive' && (
+        <SelectionBar
+          files={selectedFiles}
+          onClear={() => setSelected(new Set())}
+          onDownload={() => handleDownload(selectedFiles[0])}
+          onDownloadZip={handleSelectedDownloadZip}
+          onDelete={handleSelectedDelete}
+        />
+      )}
+
       {uploads.length > 0 && <UploadProgress items={uploads} />}
-      {preview && <PreviewModal file={preview.file} url={preview.url} onClose={() => setPreview(null)} />}
+      {preview && (
+        <PreviewModal
+          file={preview.file}
+          url={preview.url}
+          thumbnailUrl={preview.thumbnailUrl}
+          onClose={() => setPreview(null)}
+        />
+      )}
       {menu && menu.file && (
         <ContextMenu
           x={menu.x}
@@ -210,9 +319,11 @@ export default function App() {
           onPreview={() => menu.file && handlePreview(menu.file)}
           onRename={() => menu.file && handleRename(menu.file)}
           onDelete={() => menu.file && handleDelete(menu.file)}
+          onShare={() => { if (menu.file) setShareFor(menu.file); setMenu(null); }}
           onClose={() => setMenu(null)}
         />
       )}
+      {shareFor && <ShareModal file={shareFor} onClose={() => setShareFor(null)} />}
       {newFolderOpen && <NewFolderDialog onSubmit={handleNewFolder} onClose={() => setNewFolderOpen(false)} />}
       {dragOver && (
         <div className="drop-overlay">
@@ -220,5 +331,13 @@ export default function App() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthGate>
+      {() => <AppInner />}
+    </AuthGate>
   );
 }
