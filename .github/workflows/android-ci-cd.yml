@@ -5,12 +5,22 @@ on:
     branches:
       - main
       - 'release/**'
+    paths:
+      - 'mobileversion/**'
+      - '.github/workflows/android-ci-cd.yml'
   pull_request:
     branches:
       - main
+    paths:
+      - 'mobileversion/**'
+      - '.github/workflows/android-ci-cd.yml'
 
 permissions:
   contents: write
+
+defaults:
+  run:
+    working-directory: mobileversion
 
 jobs:
   # ─────────────────────────────────────────────
@@ -47,7 +57,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: adrive-debug-${{ github.run_number }}
-          path: app/build/outputs/apk/debug/*.apk
+          path: mobileversion/app/build/outputs/apk/debug/*.apk
           retention-days: 14
 
   # ─────────────────────────────────────────────
@@ -79,7 +89,7 @@ jobs:
         if: always()
         with:
           name: lint-report-${{ github.run_number }}
-          path: app/build/reports/lint-results-debug.html
+          path: mobileversion/app/build/reports/lint-results-debug.html
           retention-days: 14
 
   # ─────────────────────────────────────────────
@@ -115,24 +125,23 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: adrive-release-${{ github.run_number }}
-          path: app/build/outputs/apk/release/*.apk
+          path: mobileversion/app/build/outputs/apk/release/*.apk
           retention-days: 30
 
-      # ── Optional: create a GitHub Release tag ──────────────────────────
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: "Adrive v1.0.${{ github.run_number }}"
+          tag_name: mobile-v1.0.${{ github.run_number }}
+          name: "Adrive Mobile v1.0.${{ github.run_number }}"
           body: |
-            🚀 Auto-release from CI/CD pipeline
+            🚀 Auto-release from Android CI/CD pipeline
 
             **Commit:** ${{ github.sha }}
             **Branch:** ${{ github.ref_name }}
             **Build:** #${{ github.run_number }}
-          files: app/build/outputs/apk/release/*.apk
+            **Module:** mobileversion
+          files: mobileversion/app/build/outputs/apk/release/*.apk
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
