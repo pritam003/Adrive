@@ -1,0 +1,21 @@
+{
+  "name": "adrive-api",
+  "version": "1.0.0",
+  "description": "Azure Functions API for Adrive",
+  "main": "dist/src/index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "prestart": "npm run build",
+    "start": "func start",
+    "test": "echo \"No tests yet\""
+  },
+  "dependencies": {
+    "@azure/functions": "^4.5.0",
+    "@azure/storage-blob": "^12.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}
