@@ -94,6 +94,23 @@ function AppInner() {
     fetch('/api/me').then((r) => r.json()).then(setMe).catch(() => {});
   }, []);
 
+  // Warn before leaving / closing / hard-refresh while any upload is in progress.
+  // Uploads continue across in-app navigation (state lives here); only a full
+  // browser unload would interrupt them, so we block that.
+  useEffect(() => {
+    const active = uploads.some((u) => u.status === 'uploading');
+    if (!active) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      // Most modern browsers ignore the custom string and show a generic prompt,
+      // but returnValue must be set for the prompt to appear.
+      e.returnValue = 'Uploads are still in progress. Leave the page anyway?';
+      return e.returnValue;
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [uploads]);
+
   const handleUpload = async (fileList: FileList | File[], relativePaths?: string[]) => {
     const filesArr = Array.from(fileList);
     // Preserve nested folder structure if available (folder picker or drag-drop dir)
