@@ -13,9 +13,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.HardDrive
 import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -105,12 +105,6 @@ fun LoginScreen(
 
 @Composable
 private fun LogoSection() {
-    val infiniteTransition = rememberInfiniteTransition(label = "logo")
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(8000, easing = LinearEasing)),
-        label = "spin"
-    )
 
     Box(
         modifier = Modifier
@@ -122,7 +116,7 @@ private fun LogoSection() {
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            Icons.Filled.HardDrive,
+            Icons.Filled.Storage,
             contentDescription = "Adrive",
             modifier = Modifier.size(56.dp),
             tint = AdriveBlue
