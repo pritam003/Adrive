@@ -45,12 +45,7 @@ export async function initiateDeviceCodeFlow(): Promise<DeviceCodeResponse> {
     const text = await resp.text();
     throw new Error(`devicecode endpoint ${resp.status}: ${text}`);
   }
-  const data = (await resp.json()) as DeviceCodeResponse;
-  // Microsoft sometimes returns "https://login.microsoft.com/device" (MSA-only)
-  // which shows "wrong page" for AAD accounts and vice-versa. The universal
-  // "https://microsoft.com/devicelogin" page auto-detects account type and
-  // works for both Microsoft personal and work/school accounts.
-  return { ...data, verification_uri: 'https://microsoft.com/devicelogin' };
+  return (await resp.json()) as DeviceCodeResponse;
 }
 
 export class DeviceCodeExpiredError extends Error {
