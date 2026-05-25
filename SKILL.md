@@ -1,6 +1,9 @@
 # Adrive — Project Skill Guide
 
 > **IMPORTANT**: Always read and follow ALL instructions in this file when working on the Adrive project.
+>
+> 🔒 **ACTIVE WORK ZONE: `mobileversion/` only.**
+> Do NOT modify any files inside `webversion/` unless explicitly asked.
 
 ---
 
@@ -10,24 +13,36 @@
 Adrive/                            ← monorepo root
 ├── .github/
 │   └── workflows/
-│       ├── android-ci-cd.yml      ← Mobile CI/CD (triggers on mobileversion/**)
-│       └── web-ci-cd.yml          ← Web CI/CD    (triggers on webversion/**)
+│       ├── android-ci-cd.yml      ← Mobile CI/CD  (triggers on mobileversion/**)
+│       └── web-ci-cd.yml          ← Web CI/CD     (triggers on webversion/**)
 ├── .gitignore                     ← root-level, covers both sub-projects
 ├── SKILL.md                       ← this file — always follow
-├── mobileversion/                 ← Android (Kotlin) application
+│
+├── mobileversion/                 ← ✅ ACTIVE — Android (Kotlin) application
 │   ├── app/
 │   │   └── src/
-│   │       ├── main/
-│   │       ├── test/
-│   │       └── androidTest/
+│   │       ├── main/              ← source code, resources, AndroidManifest
+│   │       ├── test/              ← JVM unit tests
+│   │       └── androidTest/       ← instrumented tests
 │   ├── build.gradle.kts
 │   ├── gradle/
+│   │   ├── libs.versions.toml     ← version catalog (ALL versions declared here)
+│   │   └── wrapper/
 │   ├── gradle.properties
-│   ├── gradlew
-│   ├── gradlew.bat
+│   ├── gradlew / gradlew.bat
 │   └── settings.gradle.kts
-└── webversion/                    ← Web application (to be bootstrapped)
-    └── README.md
+│
+└── webversion/                    ← 🔒 READ-ONLY for mobile work
+    ├── src/                       ← React + TypeScript components
+    │   └── components/            ← FileGrid, Topbar, Sidebar, UploadProgress …
+    ├── api/                       ← Azure Functions (Node/TypeScript)
+    │   └── src/                   ← auth.ts, storage.ts, index.ts
+    ├── public/                    ← static assets (sw.js service worker)
+    ├── index.html
+    ├── package.json               ← React 18, React Router 6, Vite 5, TypeScript
+    ├── vite.config.ts
+    ├── staticwebapp.config.json   ← Azure SWA routing config
+    └── tsconfig.json
 ```
 
 | Item | Value |
@@ -44,7 +59,7 @@ Adrive/                            ← monorepo root
 
 ### Mobile (Android) pipeline
 
-**Trigger:** any push/PR that changes files under `mobileversion/**`
+**Trigger:** push / PR that changes any file under `mobileversion/**`
 
 ```
 Push touches mobileversion/**
@@ -66,58 +81,55 @@ Push touches mobileversion/**
 Jobs:
 1. **Build & Unit Test** – `cd mobileversion && ./gradlew clean test assembleDebug`
 2. **Lint Check** – `cd mobileversion && ./gradlew lint`
-3. **Release Build** – `cd mobileversion && ./gradlew clean assembleRelease` → creates GitHub Release tag `mobile-v1.0.<run#>`
+3. **Release Build** – `cd mobileversion && ./gradlew clean assembleRelease` → GitHub Release tag `mobile-v1.0.<run#>`
 
-### Web pipeline
+### Web pipeline (Azure Static Web Apps)
 
-**Trigger:** any push/PR that changes files under `webversion/**`
+**Trigger:** push / PR that changes any file under `webversion/**`
 
-Currently contains placeholder steps.
-Activate by adding `package.json` to `webversion/` and uncommenting the build/test/deploy steps in `web-ci-cd.yml`.
+```
+Push touches webversion/**
+        │
+        ▼
+ ┌──────────────────────────────────┐
+ │  npm ci → eslint → vite build    │
+ │  → Azure SWA Deploy              │
+ └──────────────────────────────────┘
+```
+
+- App location  : `webversion/`
+- API location  : `webversion/api/`
+- Output folder : `webversion/dist/`
+- Hosting       : Azure Static Web Apps
+- Secret needed : `AZURE_STATIC_WEB_APPS_API_TOKEN` (in GitHub Secrets)
 
 ---
 
-## 2. Development Workflow (always follow this)
+## 2. Development Workflow
 
-### Push mobile changes
+### 🔒 Mobile-only work (default mode)
 
 ```bash
-# 1. Make changes inside mobileversion/
-# 2. Stage & commit
+# 1. Make changes inside mobileversion/  ← ONLY here
 git add mobileversion/
 git commit -m "feat(mobile): <description>"
-
-# 3. Push → triggers Android CI/CD
-git push origin main
+git push origin main    # triggers Android CI/CD only
 ```
 
-### Push web changes
+### Web changes (only when explicitly asked)
 
 ```bash
-# 1. Make changes inside webversion/
-# 2. Stage & commit
 git add webversion/
 git commit -m "feat(web): <description>"
-
-# 3. Push → triggers Web CI/CD
-git push origin main
-```
-
-### Push changes to both
-
-```bash
-git add -A
-git commit -m "chore: <description covering both>"
-git push origin main   # both pipelines trigger independently
+git push origin main    # triggers Web CI/CD only
 ```
 
 ### Clean deployment rule
 
-> **Always run `./gradlew clean` (mobile) before a release build.**
-> The CI/CD pipeline enforces this automatically. When building locally:
+> **Always run `./gradlew clean` before a release build.**
+> CI enforces this. Locally:
 > ```bash
-> cd mobileversion
-> ./gradlew clean assembleRelease
+> cd mobileversion && ./gradlew clean assembleRelease
 > ```
 
 ---
@@ -136,7 +148,7 @@ git push origin main   # both pipelines trigger independently
 
 ### Dependency management
 
-- All versions in `mobileversion/gradle/libs.versions.toml` (version catalog).
+- All versions declared in `mobileversion/gradle/libs.versions.toml` (version catalog).
 - Never hardcode versions in `build.gradle.kts`; always use `libs.*` aliases.
 
 ### Code quality rules
@@ -150,29 +162,54 @@ git push origin main   # both pipelines trigger independently
 ### Opening in Android Studio
 
 Open the **`mobileversion/`** folder (not the repo root) in Android Studio.
-The project will sync automatically from `mobileversion/settings.gradle.kts`.
+The project syncs from `mobileversion/settings.gradle.kts`.
 
 ---
 
-## 4. Web Conventions (to be expanded)
+## 4. Web App Stack (reference — do not modify unless asked)
 
-- All web source lives in `webversion/`.
-- Keep `webversion/` completely independent of `mobileversion/`.
-- Use TypeScript strictly (`strict: true`).
-- Never hardcode API endpoints – use environment variables.
+| Layer | Technology |
+|---|---|
+| Framework | React 18 |
+| Language | TypeScript 5 |
+| Bundler | Vite 5 |
+| Router | React Router DOM 6 |
+| Icons | lucide-react |
+| Code style | ESLint + Prettier |
+| API backend | Azure Functions (Node.js 20, TypeScript) |
+| Hosting | Azure Static Web Apps |
+| Auth | Entra ID — Device Code Flow + JWT cookie |
+| File storage | Azure Blob Storage (via `api/src/storage.ts`) |
+| Upload strategy | Service Worker (`public/sw.js`) — survives page reload |
+
+### Key web source files
+
+| File | Purpose |
+|---|---|
+| `src/App.tsx` | Root component + routes |
+| `src/AuthGate.tsx` | Authentication wrapper |
+| `src/api.ts` | HTTP client for API calls |
+| `src/swUpload.ts` | Service-worker upload coordination |
+| `src/components/FileGrid.tsx` | Main file browser grid |
+| `src/components/UploadProgress.tsx` | Upload progress indicator |
+| `api/src/auth.ts` | Entra Device Code Flow |
+| `api/src/storage.ts` | Azure Blob Storage operations |
+| `staticwebapp.config.json` | SWA routing rules |
 
 ---
 
 ## 5. Secrets & Signing
 
-- Store all secrets in **GitHub Secrets** – never commit them.
-- Mobile signing secrets:
-  - `KEYSTORE_FILE` (base64-encoded keystore)
-  - `KEY_ALIAS`
-  - `KEY_PASSWORD`
-  - `STORE_PASSWORD`
-- `mobileversion/local.properties` and `*.jks` / `*.keystore` are in `.gitignore`.
-- Web API keys / tokens: store as GitHub Secrets and reference as env vars in `web-ci-cd.yml`.
+| Secret | Where used |
+|---|---|
+| `KEYSTORE_FILE` | Mobile signing (base64 keystore) |
+| `KEY_ALIAS` | Mobile signing |
+| `KEY_PASSWORD` | Mobile signing |
+| `STORE_PASSWORD` | Mobile signing |
+| `AZURE_STATIC_WEB_APPS_API_TOKEN` | Web — Azure SWA deploy token |
+
+- `mobileversion/local.properties` and `*.jks` / `*.keystore` are in `.gitignore` — never commit.
+- Web API keys: store as GitHub Secrets, reference in `web-ci-cd.yml`.
 
 ---
 
@@ -180,11 +217,14 @@ The project will sync automatically from `mobileversion/settings.gradle.kts`.
 
 | Branch | Purpose |
 |---|---|
-| `main` | Stable, production-ready code (both platforms) |
-| `feature/mobile-<name>` | Mobile-only feature (PR into `main`) |
-| `feature/web-<name>` | Web-only feature (PR into `main`) |
-| `fix/<name>` | Bug fixes (PR into `main`) |
+| `main` | Stable, production-ready (both platforms) |
+| `feature/mobile-<name>` | Mobile-only feature → PR into `main` |
+| `feature/web-<name>` | Web-only feature → PR into `main` |
+| `fix/<name>` | Bug fix → PR into `main` |
 | `release/<version>` | Release candidates |
+
+> The `master` branch is **deprecated** — all content has been migrated into
+> `main` under `mobileversion/` and `webversion/`. Do not push to `master`.
 
 ---
 
@@ -194,20 +234,20 @@ The project will sync automatically from `mobileversion/settings.gradle.kts`.
 git clone https://github.com/pritam003/Adrive.git
 cd Adrive
 
-# — Mobile —
+# ── Mobile (Android) ──────────────────────────
 cd mobileversion
 ./gradlew assembleDebug   # build debug APK
 ./gradlew test            # run unit tests
 cd ..
 
-# — Web — (once bootstrapped)
+# ── Web ──────────────────────────────────────
 cd webversion
 npm install
-npm run dev
+npm run dev               # http://localhost:5173
 ```
 
-Open `mobileversion/` in **Android Studio** for mobile development.
-Open `webversion/` in **VS Code** or your preferred editor for web development.
+- Mobile: open `mobileversion/` in **Android Studio**
+- Web: open `webversion/` in **VS Code**
 
 ---
 
@@ -225,20 +265,17 @@ GitHub Releases (tags `mobile-v1.0.<run#>`) contain the unsigned release APK.
 
 ### Web
 
-| Artifact | Retained |
-|---|---|
-| `adrive-web-<run#>` | 14 days (once enabled) |
+Deployed automatically to Azure Static Web Apps on every push to `main` that touches `webversion/**`.
+PR previews are created automatically and torn down on PR close.
 
 ---
 
 ## 9. Clean Deployment Checklist
-
-Before every release (run this mentally or as a script):
 
 - [ ] `git status` — no uncommitted changes
 - [ ] `cd mobileversion && ./gradlew clean` — stale artifacts removed
 - [ ] Lint passes: `./gradlew lint`
 - [ ] Unit tests pass: `./gradlew test`
 - [ ] No unused imports, no dead code, no unlinked TODOs
-- [ ] Secrets not hardcoded
+- [ ] Secrets not hardcoded anywhere
 - [ ] `git push origin main` — CI pipeline green ✅
