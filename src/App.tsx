@@ -13,9 +13,15 @@ import { TrashView } from './components/TrashView';
 import { SelectionBar } from './components/SelectionBar';
 import { AuthGate } from './AuthGate';
 import {
-  listItems, uploadFile, deleteFile as apiDelete, getReadSasCached,
-  createFolder as apiCreateFolder, renameFile, getQuota,
+  listItems, deleteFile as apiDelete, getReadSasCached,
+  createFolder as apiCreateFolder, renameFile, getQuota, getUploadSas,
 } from './api';
+import {
+  enqueueUpload,
+  subscribeUploads,
+  requestUploadList,
+  clearFinishedUploads,
+} from './swUpload';
 import { generateThumbnail, uploadThumbnail } from './thumbnail';
 import { downloadAsZip } from './zipDownload';
 import type { DriveFile, DriveFolder, ViewMode, QuotaInfo } from './types';
@@ -25,7 +31,7 @@ interface UploadItem {
   id: string;
   name: string;
   progress: number;
-  status: 'uploading' | 'done' | 'error';
+  status: 'queued' | 'uploading' | 'done' | 'error';
 }
 
 interface PreviewState {
@@ -94,22 +100,62 @@ function AppInner() {
     fetch('/api/me').then((r) => r.json()).then(setMe).catch(() => {});
   }, []);
 
-  // Warn before leaving / closing / hard-refresh while any upload is in progress.
-  // Uploads continue across in-app navigation (state lives here); only a full
-  // browser unload would interrupt them, so we block that.
+  // Subscribe to background upload events from the service worker, and ask
+  // for the current list on mount so transfers that survived a hard refresh
+  // re-appear in the progress UI.
   useEffect(() => {
-    const active = uploads.some((u) => u.status === 'uploading');
-    if (!active) return;
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      // Most modern browsers ignore the custom string and show a generic prompt,
-      // but returnValue must be set for the prompt to appear.
-      e.returnValue = 'Uploads are still in progress. Leave the page anyway?';
-      return e.returnValue;
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, [uploads]);
+    const pendingThumbs = new Map<string, { file: File; blobName: string }>();
+    (window as any).__adrivePendingThumbs = pendingThumbs;
+    const unsub = subscribeUploads((msg) => {
+      if (msg.type === 'progress') {
+        const pct = msg.total ? (msg.loaded / msg.total) * 100 : 0;
+        const status =
+          msg.status === 'queued' ? 'queued' :
+          msg.status === 'done' ? 'done' :
+          msg.status === 'error' ? 'error' : 'uploading';
+        setUploads((u) => {
+          const idx = u.findIndex((it) => it.id === msg.id);
+          if (idx === -1) return [...u, { id: msg.id, name: msg.name, progress: pct, status }];
+          const next = u.slice();
+          next[idx] = { ...next[idx], name: msg.name, progress: pct, status };
+          return next;
+        });
+      } else if (msg.type === 'done') {
+        setUploads((u) => u.map((it) => (it.id === msg.id ? { ...it, progress: 100, status: 'done' } : it)));
+        const p = pendingThumbs.get(msg.id);
+        if (p) {
+          generateThumbnail(p.file)
+            .then((b) => (b ? uploadThumbnail(b, p.blobName) : null))
+            .catch(() => {});
+          pendingThumbs.delete(msg.id);
+        }
+        refresh();
+        // Drop completed entries from the SW's in-memory map shortly after.
+        setTimeout(() => {
+          clearFinishedUploads().catch(() => {});
+          setUploads((u) => u.filter((it) => it.status === 'uploading' || it.status === 'queued'));
+        }, 4000);
+      } else if (msg.type === 'error') {
+        setUploads((u) => u.map((it) => (it.id === msg.id ? { ...it, status: 'error' } : it)));
+        pendingThumbs.delete(msg.id);
+      } else if (msg.type === 'list') {
+        setUploads((u) => {
+          const map = new Map(u.map((it) => [it.id, it]));
+          for (const item of msg.items) {
+            const pct = item.total ? (item.loaded / item.total) * 100 : 0;
+            const status: UploadItem['status'] =
+              item.status === 'queued' ? 'queued' :
+              item.status === 'done' ? 'done' :
+              item.status === 'error' ? 'error' : 'uploading';
+            map.set(item.id, { id: item.id, name: item.name, progress: pct, status });
+          }
+          return Array.from(map.values());
+        });
+      }
+    });
+    requestUploadList().catch(() => {});
+    return unsub;
+  }, [refresh]);
 
   const handleUpload = async (fileList: FileList | File[], relativePaths?: string[]) => {
     const filesArr = Array.from(fileList);
@@ -135,28 +181,23 @@ function AppInner() {
     await Promise.all(
       Array.from(folderSet).map((dir) => apiCreateFolder(`${prefix}${dir}`).catch(() => {}))
     );
+    // Hand each upload off to the service worker so it survives page reloads.
+    const pendingThumbs: Map<string, { file: File; blobName: string }> =
+      (window as any).__adrivePendingThumbs || new Map();
     for (let i = 0; i < filesArr.length; i++) {
       const file = filesArr[i];
       const rel = pathFor(file, i);
-      const id = `${Date.now()}-${Math.random()}`;
+      const id = `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`;
       const blobName = `${prefix}${rel}`;
-      setUploads((u) => [...u, { id, name: rel, progress: 0, status: 'uploading' }]);
       try {
-        await uploadFile(file, blobName, (loaded, total) => {
-          setUploads((u) => u.map((it) => (it.id === id ? { ...it, progress: (loaded / total) * 100 } : it)));
-        });
-        setUploads((u) => u.map((it) => (it.id === id ? { ...it, progress: 100, status: 'done' } : it)));
-        // Best-effort thumbnail generation in background
-        generateThumbnail(file)
-          .then((blob) => (blob ? uploadThumbnail(blob, blobName) : null))
-          .catch(() => {});
+        const sasUrl = await getUploadSas(blobName);
+        pendingThumbs.set(id, { file, blobName });
+        await enqueueUpload({ id, file, sasUrl, blobName, name: rel });
       } catch (e) {
         console.error(e);
-        setUploads((u) => u.map((it) => (it.id === id ? { ...it, status: 'error' } : it)));
+        setUploads((u) => [...u, { id, name: rel, progress: 0, status: 'error' }]);
       }
     }
-    setTimeout(() => setUploads((u) => u.filter((it) => it.status === 'uploading')), 3000);
-    refresh();
   };
 
   const handleDelete = async (file: DriveFile) => {

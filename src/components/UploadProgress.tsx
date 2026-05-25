@@ -4,7 +4,7 @@ interface UploadItem {
   id: string;
   name: string;
   progress: number;
-  status: 'uploading' | 'done' | 'error';
+  status: 'queued' | 'uploading' | 'done' | 'error';
 }
 
 interface Props {
