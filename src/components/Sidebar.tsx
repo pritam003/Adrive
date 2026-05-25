@@ -1,4 +1,4 @@
-import { Plus, FolderPlus, HardDrive, Trash, LogOut, Infinity as InfinityIcon } from 'lucide-react';
+import { Plus, FolderPlus, FolderUp, HardDrive, Trash, LogOut, Infinity as InfinityIcon } from 'lucide-react';
 import type { QuotaInfo, MeResponse } from '../types';
 import { formatBytes } from '../utils';
 import { logout } from '../api';
@@ -6,13 +6,14 @@ import { logout } from '../api';
 interface Props {
   onNew: () => void;
   onNewFolder: () => void;
+  onUploadFolder: () => void;
   quota: QuotaInfo;
   view: 'drive' | 'trash';
   onChangeView: (v: 'drive' | 'trash') => void;
   me: MeResponse | null;
 }
 
-export function Sidebar({ onNew, onNewFolder, quota, view, onChangeView, me }: Props) {
+export function Sidebar({ onNew, onNewFolder, onUploadFolder, quota, view, onChangeView, me }: Props) {
 
   return (
     <aside className="sidebar">
@@ -25,6 +26,10 @@ export function Sidebar({ onNew, onNewFolder, quota, view, onChangeView, me }: P
         <button className="new-btn" onClick={onNew}>
           <Plus size={20} />
           <span>New upload</span>
+        </button>
+        <button className="new-folder-btn" onClick={onUploadFolder}>
+          <FolderUp size={18} />
+          <span>Upload folder</span>
         </button>
         <button className="new-folder-btn" onClick={onNewFolder}>
           <FolderPlus size={18} />

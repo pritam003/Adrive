@@ -58,6 +58,7 @@ function AppInner() {
   const [navView, setNavView] = useState<'drive' | 'trash'>('drive');
   const [me, setMe] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
     if (navView !== 'drive') return;
@@ -93,12 +94,36 @@ function AppInner() {
     fetch('/api/me').then((r) => r.json()).then(setMe).catch(() => {});
   }, []);
 
-  const handleUpload = async (fileList: FileList | File[]) => {
+  const handleUpload = async (fileList: FileList | File[], relativePaths?: string[]) => {
     const filesArr = Array.from(fileList);
-    for (const file of filesArr) {
+    // Preserve nested folder structure if available (folder picker or drag-drop dir)
+    const pathFor = (f: File, i: number): string => {
+      const explicit = relativePaths?.[i];
+      if (explicit) return explicit;
+      // From <input webkitdirectory>
+      const w = (f as File & { webkitRelativePath?: string }).webkitRelativePath;
+      return w && w.length > 0 ? w : f.name;
+    };
+    // Collect unique parent folders we need to create first so they show up in /api/list
+    const folderSet = new Set<string>();
+    for (let i = 0; i < filesArr.length; i++) {
+      const rel = pathFor(filesArr[i], i);
+      const parts = rel.split('/');
+      // every prefix except the file itself
+      for (let k = 1; k < parts.length; k++) {
+        folderSet.add(parts.slice(0, k).join('/'));
+      }
+    }
+    // Create folder placeholders (best-effort, parallel)
+    await Promise.all(
+      Array.from(folderSet).map((dir) => apiCreateFolder(`${prefix}${dir}`).catch(() => {}))
+    );
+    for (let i = 0; i < filesArr.length; i++) {
+      const file = filesArr[i];
+      const rel = pathFor(file, i);
       const id = `${Date.now()}-${Math.random()}`;
-      const blobName = `${prefix}${file.name}`;
-      setUploads((u) => [...u, { id, name: file.name, progress: 0, status: 'uploading' }]);
+      const blobName = `${prefix}${rel}`;
+      setUploads((u) => [...u, { id, name: rel, progress: 0, status: 'uploading' }]);
       try {
         await uploadFile(file, blobName, (loaded, total) => {
           setUploads((u) => u.map((it) => (it.id === id ? { ...it, progress: (loaded / total) * 100 } : it)));
@@ -167,9 +192,55 @@ function AppInner() {
     refresh();
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
+    const items = e.dataTransfer.items;
+    // If the OS gave us directory entries, walk them so folders upload too.
+    if (items && items.length && typeof (items[0] as DataTransferItem).webkitGetAsEntry === 'function') {
+      const collected: { file: File; path: string }[] = [];
+      const walkEntry = async (entry: FileSystemEntry, parentPath: string): Promise<void> => {
+        if (entry.isFile) {
+          const f: File = await new Promise((resolve, reject) =>
+            (entry as FileSystemFileEntry).file(resolve, reject)
+          );
+          collected.push({ file: f, path: `${parentPath}${f.name}` });
+          return;
+        }
+        if (entry.isDirectory) {
+          const reader = (entry as FileSystemDirectoryEntry).createReader();
+          // readEntries returns batches; loop until empty
+          const readAll = (): Promise<FileSystemEntry[]> =>
+            new Promise((resolve, reject) => {
+              const all: FileSystemEntry[] = [];
+              const next = () =>
+                reader.readEntries((batch) => {
+                  if (!batch.length) return resolve(all);
+                  all.push(...batch);
+                  next();
+                }, reject);
+              next();
+            });
+          const children = await readAll();
+          await Promise.all(children.map((c) => walkEntry(c, `${parentPath}${entry.name}/`)));
+        }
+      };
+      const entries: FileSystemEntry[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const ent = items[i].webkitGetAsEntry();
+        if (ent) entries.push(ent);
+      }
+      if (entries.length) {
+        await Promise.all(entries.map((ent) => walkEntry(ent, '')));
+        if (collected.length) {
+          handleUpload(
+            collected.map((c) => c.file),
+            collected.map((c) => c.path)
+          );
+          return;
+        }
+      }
+    }
     if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files);
   };
 
@@ -226,6 +297,7 @@ function AppInner() {
       <Sidebar
         onNew={() => fileInputRef.current?.click()}
         onNewFolder={() => setNewFolderOpen(true)}
+        onUploadFolder={() => folderInputRef.current?.click()}
         quota={quota}
         view={navView}
         onChangeView={(v) => { setNavView(v); setSelected(new Set()); }}
@@ -288,7 +360,23 @@ function AppInner() {
         type="file"
         multiple
         style={{ display: 'none' }}
-        onChange={(e) => e.target.files && handleUpload(e.target.files)}
+        onChange={(e) => {
+          if (e.target.files) handleUpload(e.target.files);
+          e.target.value = '';
+        }}
+      />
+      <input
+        ref={folderInputRef}
+        type="file"
+        // @ts-expect-error – non-standard but widely supported
+        webkitdirectory=""
+        directory=""
+        multiple
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          if (e.target.files) handleUpload(e.target.files);
+          e.target.value = '';
+        }}
       />
 
       {selectedFiles.length > 0 && navView === 'drive' && (
