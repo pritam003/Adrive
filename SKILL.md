@@ -138,13 +138,72 @@ git push origin main    # triggers Web CI/CD only
 
 | Setting | Value |
 |---|---|
-| Language | Kotlin |
-| Min SDK | 35 |
+| Language | Kotlin 2.1.20 |
+| UI Framework | Jetpack Compose (BOM 2025.05.01) + Material 3 |
+| Architecture | MVVM — ViewModel + StateFlow + Repository |
+| Navigation | Navigation Compose |
+| Min SDK | 35 (Android 15) |
 | Target SDK | 36 |
 | Compile SDK | 36 |
 | Build System | Gradle (Kotlin DSL) |
 | Java Version | 11 (source & target), JDK 17 on CI |
 | Package | `com.example.adrive` |
+
+### Configure the API base URL (required before first run)
+
+Add to `mobileversion/local.properties` (never commit this file):
+```
+API_BASE_URL=https://your-adrive.azurestaticapps.net/
+```
+
+### App architecture & key source files
+
+```
+mobileversion/app/src/main/java/com/example/adrive/
+├── AdriveApp.kt                   ← Application class (initialises ApiClient)
+├── MainActivity.kt                ← Single activity, NavHost
+├── data/
+│   ├── model/Models.kt            ← All data classes (DriveFile, TrashItem, …)
+│   ├── network/
+│   │   ├── ApiService.kt          ← Retrofit service interface (all API endpoints)
+│   │   └── ApiClient.kt           ← OkHttp + Retrofit singleton, PersistentCookieJar
+│   └── repository/DriveRepository.kt  ← All API calls wrapped in Result<T>
+├── ui/
+│   ├── theme/                     ← Color.kt, Type.kt, Theme.kt (Material 3)
+│   ├── auth/
+│   │   ├── LoginViewModel.kt      ← Auth state machine (Device Code Flow)
+│   │   └── LoginScreen.kt         ← Login UI with device code entry
+│   ├── drive/
+│   │   ├── DriveViewModel.kt      ← File browser state
+│   │   ├── DriveScreen.kt         ← Main screen (grid/list, breadcrumbs, FAB)
+│   │   └── AppDrawer.kt           ← Navigation drawer (Drive, Trash, quota, sign-out)
+│   ├── components/
+│   │   └── FileComponents.kt      ← FileCard, FolderCard, UploadProgressBar
+│   ├── trash/
+│   │   ├── TrashViewModel.kt      ← Trash state
+│   │   └── TrashScreen.kt         ← Trash list (restore / purge)
+│   └── preview/
+│       └── PreviewScreen.kt       ← Zoomable image preview + open-externally
+└── upload/
+    └── UploadManager.kt           ← Direct SAS upload to Azure Blob Storage with progress
+```
+
+### Feature parity with web app
+
+| Web feature | Android equivalent |
+|---|---|
+| Microsoft Device Code Login | `LoginScreen` + `LoginViewModel` (same flow) |
+| File grid / list view | `DriveScreen` with `ViewMode.GRID / LIST` toggle |
+| Folder navigation + breadcrumbs | `DriveViewModel.openFolder()` + breadcrumb row |
+| File upload (SAS PUT to Azure) | `UploadManager` using OkHttp |
+| Upload progress | `UploadProgressBar` in bottom bar |
+| File preview | `PreviewScreen` (zoomable for images, open-external otherwise) |
+| Rename, delete (soft) | Context menus in `FileCard` / `FileListItem` |
+| New folder | `NewFolderDialog` |
+| Trash view | `TrashScreen` — restore / purge / empty-all |
+| Storage quota | Shown in navigation drawer |
+| JWT cookie auth | `PersistentCookieJar` persists across app restarts |
+| Share link | `createShare()` in `DriveViewModel` |
 
 ### Dependency management
 
