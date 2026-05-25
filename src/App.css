@@ -421,6 +421,65 @@
 }
 .auth-btn:hover { background: #1765c0; }
 
+/* --- Device code login --- */
+.device-code-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #f1f3f4;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 8px 0 16px;
+}
+.device-code {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 3px;
+  color: #202124;
+}
+.device-code-copy {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #5f6368;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+}
+.device-code-copy:hover { color: #1a73e8; }
+.device-code-copied {
+  color: #1e8e3e;
+  font-size: 12px;
+  margin: -8px 0 12px;
+}
+.device-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #5f6368;
+  font-size: 13px;
+  margin: 16px 0 8px;
+}
+.device-status .spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.auth-error {
+  color: #d93025;
+  font-size: 13px;
+  margin-top: 16px;
+}
+.link-btn {
+  background: transparent;
+  border: none;
+  color: #5f6368;
+  cursor: pointer;
+  font-size: 13px;
+  text-decoration: underline;
+  padding: 4px;
+}
+.link-btn:hover { color: #1a73e8; }
+
 /* --- User info in sidebar --- */
 .user-info {
   margin-top: auto;
@@ -442,6 +501,10 @@
   color: #5f6368;
   text-decoration: none;
   font-size: 12px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
 }
 .logout-link:hover { color: #1a73e8; }
 

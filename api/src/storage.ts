@@ -1,13 +1,14 @@
 import { BlobServiceClient, StorageSharedKeyCredential, generateBlobSASQueryParameters, BlobSASPermissions } from '@azure/storage-blob';
-import { HttpRequest, HttpResponseInit } from '@azure/functions';
 
 const CONN = process.env.AZURE_STORAGE_CONNECTION_STRING || '';
 const CONTAINER = process.env.STORAGE_CONTAINER || 'drive-files';
-const OWNER_USER_ID = process.env.OWNER_USER_ID || '';
 
 export const TRASH_PREFIX = '.trash/';
 export const THUMB_PREFIX = '.thumbnails/';
 export const SHARE_PREFIX = '.shares/';
+
+// Re-export auth helpers so existing callers keep working.
+export { OWNER_USER_ID, isOwner, requireOwner, getUserFromRequest } from './auth';
 
 function parseConn(): { accountName: string; accountKey: string } {
   const parts: Record<string, string> = {};
@@ -31,7 +32,6 @@ export function getContainerClient() {
 }
 
 export const containerName = CONTAINER;
-export { OWNER_USER_ID };
 
 export function generateUploadSas(blobName: string, expiryMinutes = 60): string {
   const { accountName, accountKey } = parseConn();
@@ -63,38 +63,6 @@ export function generateReadSas(blobName: string, expiryMinutes = 30): string {
     creds
   ).toString();
   return `https://${accountName}.blob.core.windows.net/${CONTAINER}/${encodeBlobPath(blobName)}?${sas}`;
-}
-
-// --- Auth helpers ---
-
-interface ClientPrincipal {
-  userId: string;
-  userDetails: string;
-  userRoles: string[];
-  identityProvider: string;
-}
-
-export function getClientPrincipal(req: HttpRequest): ClientPrincipal | null {
-  const header = req.headers.get('x-ms-client-principal');
-  if (!header) return null;
-  try {
-    const decoded = Buffer.from(header, 'base64').toString('utf-8');
-    return JSON.parse(decoded);
-  } catch {
-    return null;
-  }
-}
-
-export function isOwner(req: HttpRequest): boolean {
-  if (!OWNER_USER_ID) return true; // bootstrap mode: no owner configured
-  const principal = getClientPrincipal(req);
-  if (!principal) return false;
-  return principal.userId === OWNER_USER_ID;
-}
-
-export function requireOwner(req: HttpRequest): HttpResponseInit | null {
-  if (isOwner(req)) return null;
-  return { status: 403, jsonBody: { error: 'forbidden' } };
 }
 
 // --- Path helpers ---

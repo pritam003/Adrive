@@ -21,9 +21,46 @@ export async function getReadSasCached(name: string): Promise<string> {
 
 // --- Auth ---
 export async function getMe(): Promise<MeResponse> {
-  const res = await fetch(`${API_BASE}/me`);
+  const res = await fetch(`${API_BASE}/me`, { credentials: 'include' });
   if (!res.ok) return { authenticated: false, ownerConfigured: false };
   return res.json();
+}
+
+export interface DeviceCodeInfo {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;
+  interval: number;
+  message: string;
+}
+
+export async function startDeviceLogin(): Promise<DeviceCodeInfo> {
+  const res = await fetch(`${API_BASE}/auth/login`, { method: 'POST', credentials: 'include' });
+  if (!res.ok) throw new Error('login_failed');
+  return res.json();
+}
+
+export type DeviceCodePollResult =
+  | { status: 'pending' }
+  | { status: 'success'; userId: string; name: string }
+  | { status: 'expired' }
+  | { status: 'error'; error: string };
+
+export async function pollDeviceLogin(device_code: string): Promise<DeviceCodePollResult> {
+  const res = await fetch(`${API_BASE}/auth/device-code-status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ device_code }),
+  });
+  if (res.status === 410) return { status: 'expired' };
+  const data = await res.json();
+  return data;
+}
+
+export async function logout(): Promise<void> {
+  await fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
 }
 
 // --- List ---

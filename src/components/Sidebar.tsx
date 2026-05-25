@@ -1,6 +1,7 @@
 import { Plus, FolderPlus, HardDrive, Trash, LogOut } from 'lucide-react';
 import type { QuotaInfo, MeResponse } from '../types';
 import { formatBytes } from '../utils';
+import { logout } from '../api';
 
 interface Props {
   onNew: () => void;
@@ -66,9 +67,17 @@ export function Sidebar({ onNew, onNewFolder, quota, view, onChangeView, me }: P
       {me && me.authenticated && (
         <div className="user-info">
           <div className="user-name" title={me.userDetails}>{me.userDetails}</div>
-          <a href="/.auth/logout" className="logout-link" title="Sign out">
+          <button
+            type="button"
+            onClick={async () => {
+              await logout();
+              window.location.reload();
+            }}
+            className="logout-link"
+            title="Sign out"
+          >
             <LogOut size={14} /> Sign out
-          </a>
+          </button>
         </div>
       )}
     </aside>

@@ -1,12 +1,10 @@
-import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
+import { app, HttpRequest, HttpResponseInit } from '@azure/functions';
 import { randomUUID } from 'crypto';
 import {
   generateUploadSas,
   generateReadSas,
   getContainerClient,
   requireOwner,
-  getClientPrincipal,
-  OWNER_USER_ID,
   isHiddenPath,
   TRASH_PREFIX,
   THUMB_PREFIX,
@@ -15,6 +13,17 @@ import {
   thumbPath,
   sharePath,
 } from './storage';
+import {
+  initiateDeviceCodeFlow,
+  pollForDeviceCodeToken,
+  DeviceCodeExpiredError,
+  getMicrosoftUser,
+  createToken,
+  buildAuthCookie,
+  clearedAuthCookie,
+  getUserFromRequest,
+  OWNER_USER_ID,
+} from './auth';
 
 // ---------- helpers ----------
 function thumbnailReadSas(name: string): string | null {
@@ -24,18 +33,73 @@ function thumbnailReadSas(name: string): string | null {
 
 // ---------- GET /api/me ----------
 async function me(req: HttpRequest): Promise<HttpResponseInit> {
-  const principal = getClientPrincipal(req);
-  if (!principal) return { jsonBody: { authenticated: false, ownerConfigured: !!OWNER_USER_ID } };
+  const user = getUserFromRequest(req);
+  if (!user) return { jsonBody: { authenticated: false, ownerConfigured: !!OWNER_USER_ID } };
   return {
     jsonBody: {
       authenticated: true,
-      userId: principal.userId,
-      userDetails: principal.userDetails,
-      identityProvider: principal.identityProvider,
-      isOwner: !OWNER_USER_ID || principal.userId === OWNER_USER_ID,
+      userId: user.sub,
+      userDetails: user.name || user.email,
+      identityProvider: 'aad',
+      isOwner: !OWNER_USER_ID || user.sub === OWNER_USER_ID,
       ownerConfigured: !!OWNER_USER_ID,
     },
   };
+}
+
+// ---------- POST /api/auth/login (start device code) ----------
+async function authLogin(_req: HttpRequest): Promise<HttpResponseInit> {
+  try {
+    const flow = await initiateDeviceCodeFlow();
+    return {
+      jsonBody: {
+        device_code: flow.device_code,
+        user_code: flow.user_code,
+        verification_uri: flow.verification_uri,
+        expires_in: flow.expires_in,
+        interval: flow.interval,
+        message: `Visit ${flow.verification_uri} and enter code ${flow.user_code}`,
+      },
+    };
+  } catch (err) {
+    return { status: 500, jsonBody: { error: 'login_failed', detail: String(err) } };
+  }
+}
+
+// ---------- POST /api/auth/device-code-status body { device_code } ----------
+async function authDeviceCodeStatus(req: HttpRequest): Promise<HttpResponseInit> {
+  let body: { device_code?: string };
+  try {
+    body = (await req.json()) as { device_code?: string };
+  } catch {
+    return { status: 400, jsonBody: { error: 'invalid_json' } };
+  }
+  if (!body.device_code) return { status: 400, jsonBody: { error: 'device_code required' } };
+  try {
+    const tokens = await pollForDeviceCodeToken(body.device_code);
+    if (!tokens) return { jsonBody: { status: 'pending' } };
+    const msUser = await getMicrosoftUser(tokens.access_token);
+    const token = createToken({
+      sub: msUser.id,
+      name: msUser.displayName,
+      email: msUser.mail || msUser.userPrincipalName,
+    });
+    return {
+      status: 200,
+      headers: { 'Set-Cookie': buildAuthCookie(token) },
+      jsonBody: { status: 'success', userId: msUser.id, name: msUser.displayName },
+    };
+  } catch (err) {
+    if (err instanceof DeviceCodeExpiredError) {
+      return { status: 410, jsonBody: { status: 'expired', error: 'device code expired' } };
+    }
+    return { status: 500, jsonBody: { status: 'error', error: String(err) } };
+  }
+}
+
+// ---------- POST /api/auth/logout ----------
+async function authLogout(_req: HttpRequest): Promise<HttpResponseInit> {
+  return { headers: { 'Set-Cookie': clearedAuthCookie() }, jsonBody: { ok: true } };
 }
 
 // ---------- POST /api/getRoles (SWA roles function) ----------
@@ -336,6 +400,9 @@ async function thumbSas(req: HttpRequest): Promise<HttpResponseInit> {
 
 // ---------- Register routes ----------
 app.http('me', { route: 'me', methods: ['GET'], authLevel: 'anonymous', handler: me });
+app.http('authLogin', { route: 'auth/login', methods: ['POST'], authLevel: 'anonymous', handler: authLogin });
+app.http('authDeviceCodeStatus', { route: 'auth/device-code-status', methods: ['POST'], authLevel: 'anonymous', handler: authDeviceCodeStatus });
+app.http('authLogout', { route: 'auth/logout', methods: ['POST'], authLevel: 'anonymous', handler: authLogout });
 app.http('getRoles', { route: 'getRoles', methods: ['POST'], authLevel: 'anonymous', handler: getRoles });
 app.http('sas', { route: 'sas', methods: ['GET'], authLevel: 'anonymous', handler: sas });
 app.http('list', { route: 'list', methods: ['GET'], authLevel: 'anonymous', handler: list });
