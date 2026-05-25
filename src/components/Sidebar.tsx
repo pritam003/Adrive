@@ -1,4 +1,4 @@
-import { Plus, FolderPlus, HardDrive, Trash, LogOut } from 'lucide-react';
+import { Plus, FolderPlus, HardDrive, Trash, LogOut, Infinity as InfinityIcon } from 'lucide-react';
 import type { QuotaInfo, MeResponse } from '../types';
 import { formatBytes } from '../utils';
 import { logout } from '../api';
@@ -12,10 +12,7 @@ interface Props {
   me: MeResponse | null;
 }
 
-const QUOTA_LIMIT = 5 * 1024 * 1024 * 1024; // 5GB soft cap
-
 export function Sidebar({ onNew, onNewFolder, quota, view, onChangeView, me }: Props) {
-  const pct = Math.min(100, (quota.totalBytes / QUOTA_LIMIT) * 100);
 
   return (
     <aside className="sidebar">
@@ -56,12 +53,18 @@ export function Sidebar({ onNew, onNewFolder, quota, view, onChangeView, me }: P
 
       <div className="storage">
         <div className="storage-label">
-          {formatBytes(quota.totalBytes)} of {formatBytes(QUOTA_LIMIT)} used
+          <span className="storage-used">{formatBytes(quota.totalBytes)}</span>
+          <span className="storage-of">of</span>
+          <span className="storage-infinity" title="Unlimited storage">
+            <InfinityIcon size={20} strokeWidth={2.5} />
+          </span>
         </div>
         <div className="storage-bar">
-          <div className="storage-bar-fill" style={{ width: `${pct}%` }} />
+          <div className="storage-bar-rainbow" />
         </div>
-        <div className="storage-info">{quota.fileCount} files</div>
+        <div className="storage-info">
+          {quota.fileCount} {quota.fileCount === 1 ? 'file' : 'files'} · unlimited ✨
+        </div>
       </div>
 
       {me && me.authenticated && (
